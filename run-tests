@@ -25,6 +25,7 @@ set -x
 
 : ${OTPTOOL:=$(which otptool)}
 : ${SOCSEC:=$(which socsec)}
+: ${RESOCSEC:=$(which resocsec)}
 : ${BL1_IMAGE:=tests/data/bl1.bin}
 : ${RUN:=$(which coverage) run -p}
 
@@ -106,11 +107,11 @@ verify_image() {
 	local soc=$1
 	local slug=$(make_slug $@)
 
-	$RUN $SOCSEC verify \
-		--soc $soc \
-		--sec_image tests/data/generated/${slug}/bl1.signed.bin \
+	$RUN $RESOCSEC verify-secure-image \
 		--output tests/data/generated/${slug}/bl1.bin \
-		--otp_image tests/data/generated/${slug}/otp-all.image
+		$soc \
+		tests/data/generated/${slug}/otp-all.image \
+		tests/data/generated/${slug}/bl1.signed.bin
 }
 
 parse_config() {
@@ -120,10 +121,10 @@ parse_config() {
 	then
 		case $1 in
 		sign-stream)
-			args="--signing_helper ./tests/bin/sign-stream"
+			args="--sign-stream ./tests/bin/sign-stream"
 			;;
 		sign-file)
-			args="--signing_helper_with_files ./tests/bin/sign-file"
+			args="--sign-file ./tests/bin/sign-file"
 			;;
 		*)
 			;;
@@ -148,13 +149,14 @@ make_mode2_bl1_image() {
 
 	args=$(parse_config $@)
 
-	$RUN $SOCSEC make_secure_bl1_image \
-		--soc $soc \
-		--algorithm RSA${rot_rsa}_SHA${rot_sha} \
-		--bl1_image $BL1_IMAGE \
-		--output tests/data/generated/${slug}/bl1.signed.bin \
-		--rsa_sign_key tests/keys/rsa${rot_rsa}.pem \
-		$args
+	$RUN $RESOCSEC secure-bootstrap-image \
+		$args \
+		mode2 \
+			$soc \
+			RSA${rot_rsa}-SHA${rot_sha} \
+			tests/keys/rsa${rot_rsa}.pem \
+			$BL1_IMAGE \
+			tests/data/generated/${slug}/bl1.signed.bin
 
 	verify_image $soc $rev mode2 $rot_rsa $rot_sha $@
 }
@@ -176,15 +178,18 @@ make_cot_mode2_bl1_image() {
 
 	args=$(parse_config $@)
 
-	$RUN $SOCSEC make_secure_bl1_image \
-		--soc $soc \
-		--algorithm RSA${rot_rsa}_SHA${rot_sha} \
-		--bl1_image $BL1_IMAGE \
-		--output tests/data/generated/${slug}/bl1.signed.bin \
-		--rsa_sign_key tests/keys/rsa${rot_rsa}.pem \
-		--cot_algorithm RSA${cot_rsa}_SHA${cot_sha} \
-		--cot_verify_key tests/keys/rsa${cot_rsa}.pub.pem \
-		$args
+	$RUN $RESOCSEC secure-bootstrap-image \
+		--deterministic \
+		$args \
+		--chain-style-signed \
+			RSA${cot_rsa}-SHA${cot_sha} \
+			tests/keys/rsa${cot_rsa}.pub.pem \
+		mode2 \
+			$soc \
+			RSA${rot_rsa}-SHA${rot_sha} \
+			tests/keys/rsa${rot_rsa}.pem \
+			$BL1_IMAGE \
+			tests/data/generated/${slug}/bl1.signed.bin
 
 	verify_image $soc $rev mode2 $rot_rsa $rot_sha cot $cot_rsa $cot_sha $@
 }
@@ -204,16 +209,16 @@ make_mode2aes1_bl1_image() {
 
 	args=$(parse_config $@)
 
-	$RUN $SOCSEC make_secure_bl1_image \
-		--soc $soc \
-		--algorithm AES_RSA${rot_rsa}_SHA${rot_sha} \
-		--bl1_image $BL1_IMAGE \
-		--output tests/data/generated/${slug}/bl1.signed.bin \
-		--rsa_sign_key tests/keys/rsa${rot_rsa}.pem \
-		--key_in_otp \
-		--aes_key tests/keys/aes-oem.bin \
+	$RUN $RESOCSEC secure-bootstrap-image \
 		--deterministic \
-		$args
+		$args \
+		mode2aes1 \
+			$soc \
+			AES-RSA${rot_rsa}-SHA${rot_sha} \
+			tests/keys/aes-oem.bin \
+			tests/keys/rsa${rot_rsa}.pem \
+			$BL1_IMAGE \
+			tests/data/generated/${slug}/bl1.signed.bin
 
 	verify_image $soc $rev mode2aes1 $rot_rsa $rot_sha $@
 }
@@ -235,18 +240,19 @@ make_cot_mode2aes1_bl1_image() {
 
 	args=$(parse_config $@)
 
-	$RUN $SOCSEC make_secure_bl1_image \
-		--soc $soc \
-		--algorithm AES_RSA${rot_rsa}_SHA${rot_sha} \
-		--bl1_image $BL1_IMAGE \
-		--output tests/data/generated/${slug}/bl1.signed.bin \
-		--rsa_sign_key tests/keys/rsa${rot_rsa}.pem \
-		--key_in_otp \
-		--aes_key tests/keys/aes-oem.bin \
-		--cot_algorithm RSA${cot_rsa}_SHA${cot_sha} \
-		--cot_verify_key tests/keys/rsa${cot_rsa}.pub.pem \
+	$RUN $RESOCSEC secure-bootstrap-image \
 		--deterministic \
-		$args
+		$args \
+		--chain-style-signed \
+			RSA${cot_rsa}-SHA${cot_sha} \
+			tests/keys/rsa${cot_rsa}.pub.pem \
+		mode2aes1 \
+			$soc \
+			AES-RSA${rot_rsa}-SHA${rot_sha} \
+			tests/keys/aes-oem.bin \
+			tests/keys/rsa${rot_rsa}.pem \
+			$BL1_IMAGE \
+			tests/data/generated/${slug}/bl1.signed.bin
 
 	verify_image $soc $rev mode2aes1 $rot_rsa $rot_sha cot $cot_rsa $cot_sha $@
 }
@@ -266,16 +272,17 @@ make_mode2aes2_bl1_image() {
 
 	args=$(parse_config $@)
 
-	$RUN $SOCSEC make_secure_bl1_image \
-		--soc $soc \
-		--algorithm AES_RSA${rot_rsa}_SHA${rot_sha} \
-		--bl1_image $BL1_IMAGE \
-		--output tests/data/generated/${slug}/bl1.signed.bin \
-		--rsa_sign_key tests/keys/rsa${rot_rsa}.pem \
-		--aes_key tests/keys/aes-oem.bin \
-		--rsa_aes tests/keys/rsa${rot_rsa}.pub.pem \
+	$RUN $RESOCSEC secure-bootstrap-image \
 		--deterministic \
-		$args
+		$args \
+		mode2aes2 \
+			$soc \
+			AES-RSA${rot_rsa}-SHA${rot_sha} \
+			tests/keys/aes-oem.bin \
+			tests/keys/rsa${rot_rsa}.pub.pem \
+			tests/keys/rsa${rot_rsa}.pem \
+			$BL1_IMAGE \
+			tests/data/generated/${slug}/bl1.signed.bin
 
 	verify_image $soc $rev mode2aes2 $rot_rsa $rot_sha $@
 }
@@ -297,18 +304,20 @@ make_cot_mode2aes2_bl1_image() {
 
 	args=$(parse_config $@)
 
-	$RUN $SOCSEC make_secure_bl1_image \
-		--soc $soc \
-		--algorithm AES_RSA${rot_rsa}_SHA${rot_sha} \
-		--bl1_image $BL1_IMAGE \
-		--output tests/data/generated/${slug}/bl1.signed.bin \
-		--rsa_sign_key tests/keys/rsa${rot_rsa}.pem \
-		--aes_key tests/keys/aes-oem.bin \
-		--rsa_aes tests/keys/rsa${rot_rsa}.pub.pem \
-		--cot_algorithm RSA${cot_rsa}_SHA${cot_sha} \
-		--cot_verify_key tests/keys/rsa${cot_rsa}.pub.pem \
+	$RUN $RESOCSEC secure-bootstrap-image \
 		--deterministic \
-		$args
+		$args \
+		--chain-style-signed \
+			RSA${cot_rsa}-SHA${cot_sha} \
+			tests/keys/rsa${cot_rsa}.pub.pem \
+		mode2aes2 \
+			$soc \
+			AES-RSA${rot_rsa}-SHA${rot_sha} \
+			tests/keys/aes-oem.bin \
+			tests/keys/rsa${rot_rsa}.pub.pem \
+			tests/keys/rsa${rot_rsa}.pem \
+			$BL1_IMAGE \
+			tests/data/generated/${slug}/bl1.signed.bin
 
 	verify_image $soc $rev mode2aes2 $rot_rsa $rot_sha cot $cot_rsa $cot_sha $@
 }
@@ -326,14 +335,14 @@ make_modegcm_bl1_image() {
 
 	args=$(parse_config $@)
 
-	$RUN $SOCSEC make_secure_bl1_image \
-		--soc $soc \
-		--algorithm AES_GCM \
-		--bl1_image $BL1_IMAGE \
-		--output tests/data/generated/${slug}/bl1.signed.bin \
-		--gcm_aes_key tests/keys/aes-gcm.bin \
+	$RUN $RESOCSEC secure-bootstrap-image \
 		--deterministic \
-		$args
+		$args \
+		modegcm \
+			$soc \
+			tests/keys/aes-gcm.bin \
+			$BL1_IMAGE \
+			tests/data/generated/${slug}/bl1.signed.bin
 
 	verify_image $soc $rev modegcm $@
 }
@@ -353,16 +362,17 @@ make_cot_modegcm_bl1_image() {
 
 	args=$(parse_config $@)
 
-	$RUN $SOCSEC make_secure_bl1_image \
-		--soc $soc \
-		--algorithm AES_GCM \
-		--bl1_image $BL1_IMAGE \
-		--output tests/data/generated/${slug}/bl1.signed.bin \
-		--gcm_aes_key tests/keys/aes-gcm.bin \
-		--cot_algorithm RSA${cot_rsa}_SHA${cot_sha} \
-		--cot_verify_key tests/keys/rsa${cot_rsa}.pub.pem \
+	$RUN $RESOCSEC secure-bootstrap-image \
 		--deterministic \
-		$args
+		$args \
+		--chain-style-signed \
+			RSA${cot_rsa}-SHA${cot_sha} \
+			tests/keys/rsa${cot_rsa}.pub.pem \
+		modegcm \
+			$soc \
+			tests/keys/aes-gcm.bin \
+			$BL1_IMAGE \
+			tests/data/generated/${slug}/bl1.signed.bin
 
 	verify_image $soc $rev modegcm cot $cot_rsa $cot_sha $@
 }
@@ -381,12 +391,19 @@ make_sv_chain_image() {
 
 	args=$(parse_config $@)
 
-	$RUN $SOCSEC make_sv_chain_image \
-		--algorithm RSA${bl2_rsa}_SHA${bl2_sha} \
-		--image_relative_path tests/data/ \
-		--cot_part bl2.bin:generated/bl2.${bl2_slug}.signed.bin:tests/keys/rsa${bl2_rsa}.pem:tests/keys/rsa${bl2_rsa}.pub.pem \
-		bl3.bin:generated/bl3.${bl3_slug}.signed.bin:tests/keys/rsa${bl3_rsa}.pem:tests/keys/rsa${bl3_rsa}.pub.pem \
-		$args
+	$RUN $RESOCSEC secure-chained-images \
+		$args \
+		RSA${bl2_rsa}-SHA${bl2_sha} \
+		--image \
+			tests/data/bl2.bin \
+			tests/data/generated/bl2.${bl2_slug}.signed.bin \
+			tests/keys/rsa${bl2_rsa}.pem \
+			tests/keys/rsa${bl2_rsa}.pub.pem \
+		--image \
+			tests/data/bl3.bin \
+			tests/data/generated/bl3.${bl3_slug}.signed.bin \
+			tests/keys/rsa${bl3_rsa}.pem \
+			tests/keys/rsa${bl3_rsa}.pub.pem
 }
 
 make_mode2aes2_bl1_image_from_rsa_priv() {
@@ -404,16 +421,17 @@ make_mode2aes2_bl1_image_from_rsa_priv() {
 
 	args=$(parse_config rsa-priv)
 
-	$RUN $SOCSEC make_secure_bl1_image \
-		--soc $soc \
-		--algorithm AES_RSA${rot_rsa}_SHA${rot_sha} \
-		--bl1_image $BL1_IMAGE \
-		--output tests/data/generated/${slug}/bl1.signed.bin \
-		--rsa_sign_key tests/keys/rsa${rot_rsa}.pem \
-		--aes_key tests/keys/aes-oem.bin \
-		--rsa_aes tests/keys/rsa${rot_rsa}.pem \
+	$RUN $RESOCSEC secure-bootstrap-image \
 		--deterministic \
-		$args
+		$args \
+		mode2aes2 \
+			$soc \
+			AES-RSA${rot_rsa}-SHA${rot_sha} \
+			tests/keys/aes-oem.bin \
+			tests/keys/rsa${rot_rsa}.pem \
+			tests/keys/rsa${rot_rsa}.pem \
+			$BL1_IMAGE \
+			tests/data/generated/${slug}/bl1.signed.bin
 
 	verify_image $soc $rev mode2aes2 $rot_rsa $rot_sha rsa-priv
 }
@@ -423,11 +441,11 @@ clean() {
 }
 
 exercise_no_args() {
-	$RUN $SOCSEC || true
+	$RUN $RESOCSEC || true
 }
 
 exercise_help() {
-	$RUN $SOCSEC --help
+	$RUN $RESOCSEC --help
 }
 
 exercise_bl1_mode2() {
