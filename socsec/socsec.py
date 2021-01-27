@@ -633,6 +633,7 @@ class Sec(object):
                               cot_digest_fd,
                               signing_helper,
                               signing_helper_with_files,
+                              spl_stack_parity,
                               deterministic):
         """Implements the 'make_vbmeta_image' command.
 
@@ -666,8 +667,12 @@ class Sec(object):
                 header_offset = 0x20
             if enc_offset == None:
                 enc_offset = 0x50
-            if bl1_image_len > (60 * 1024):
-                raise SecError("The maximum size of BL1 image is 60 KBytes.")
+            if spl_stack_parity:
+                bl1_max_len = 60 * 1024
+            else:
+                bl1_max_len = 64 * 1024 - 512
+            if bl1_image_len > bl1_max_len:
+                raise SecError(f"The maximum size of BL1 image is {bl1_max_len} bytes.")
         elif soc_version == '1030':
             if header_offset == None:
                 header_offset = 0x400
@@ -1384,6 +1389,11 @@ class secTool(object):
                                 help='Bootloader 1 Image (e.g. u-boot-spl.bin), which will be verified by soc',
                                 type=argparse.FileType('rb'),
                                 required=False)
+        spl_stack_parity_help='''SPL stack exists in SRAM that is not
+        parity-protected. This increases the allowed size of the SPL binary'''
+        sub_parser.add_argument('--no-spl-stack-parity',
+                                dest='spl_stack_parity', action='store_false',
+                                default=True, help=spl_stack_parity_help)
         sub_parser.add_argument('--header_offset',
                                 help='RoT header offsest',
                                 type=parse_number,
@@ -1559,6 +1569,7 @@ class secTool(object):
                                        args.cot_digest,
                                        args.signing_helper,
                                        args.signing_helper_with_files,
+                                       args.spl_stack_parity,
                                        args.deterministic)
 
     def make_sv_chain_image(self, args):
